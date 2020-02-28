@@ -2,6 +2,7 @@ package binx
 
 import (
 	"encoding"
+	"errors"
 
 	bolt "github.com/coreos/bbolt"
 )
@@ -24,7 +25,6 @@ type (
 		Index
 		encoding.BinaryMarshaler
 	}
-
 	Indexable interface {
 		Storable
 		MasterIndexBucketKey() []byte
@@ -49,19 +49,59 @@ type (
 	}
 
 	Reader interface {
-		List(q QueryableSlice, limit, skip int) error
-		ListBy(q QueryableSlice, index Bucket, limit, skip int) error
-		ListWhere(q QueryableSlice, index Index, limit, skip int) error
 		Get(q Queryable, key []byte) error
-		Last(q Queryable) error
-		First(q Queryable) error
+		List(qs QueryableSlice, cnd ...Condition) error
+		Last(q Queryable, cnd ...Condition) error
+		First(q Queryable, cnd ...Condition) error
 	}
 
 	Writer interface {
 		Reader
 		Put(Indexable) error
 	}
+
+	Condition interface {
+		apply(query) (query, error)
+	}
 )
+
+type (
+	where struct {
+		Index
+	}
+
+	by struct {
+		Index
+	}
+
+	limit struct {
+		int
+	}
+
+	skip struct {
+		int
+	}
+
+	query struct {
+		Where Index
+		By    Index
+		Skip  int
+		Limit int
+	}
+)
+
+func Where(idx Index) Condition {
+	return where{idx}
+}
+func By(idx Index) Condition {
+	return by{idx}
+}
+func Limit(n int) Condition {
+	return limit{n}
+}
+func Skip(n int) Condition {
+	return skip{n}
+}
 
 func Open(fileName string, structure []Indexable) (DB, error) {
 	buckets := [][]byte{}
@@ -110,18 +150,18 @@ func (s *db) View(fn func(w Reader) error) error {
 	})
 }
 
-func (s *db) First(q Queryable) (err error) {
+func (s *db) First(q Queryable, cnd ...Condition) (err error) {
 	err = s.DB.View(func(tx *bolt.Tx) error {
 		r := &reader{tx}
-		err = r.First(q)
+		err = r.First(q, cnd...)
 		return err
 	})
 	return err
 }
-func (s *db) Last(q Queryable) (err error) {
+func (s *db) Last(q Queryable, cnd ...Condition) (err error) {
 	err = s.DB.View(func(tx *bolt.Tx) error {
 		r := &reader{tx}
-		err = r.Last(q)
+		err = r.Last(q, cnd...)
 		return err
 	})
 	return err
@@ -136,32 +176,12 @@ func (s *db) Get(q Queryable, key []byte) (err error) {
 	return err
 }
 
-func (s *db) List(q QueryableSlice, limit, skip int) (err error) {
+func (s *db) List(qs QueryableSlice, cnd ...Condition) (err error) {
 	err = s.DB.View(func(tx *bolt.Tx) error {
 		r := &reader{tx}
-		err = r.List(q, limit, skip)
+		err = r.List(qs, cnd...)
 		return err
 	})
-	return err
-}
-
-func (s *db) ListBy(q QueryableSlice, index Bucket, limit, skip int) (err error) {
-	err = s.DB.View(func(tx *bolt.Tx) error {
-		r := &reader{tx}
-		err = r.ListBy(q, index, limit, skip)
-		return err
-	})
-
-	return err
-}
-
-func (s *db) ListWhere(q QueryableSlice, index Index, limit, skip int) (err error) {
-	err = s.DB.View(func(tx *bolt.Tx) error {
-		r := &reader{tx}
-		err = r.ListWhere(q, index, limit, skip)
-		return err
-	})
-
 	return err
 }
 
@@ -170,4 +190,33 @@ func (s *db) Put(st Indexable) (err error) {
 		w := &writer{tx, &reader{tx}}
 		return w.Put(st)
 	})
+}
+
+func (cn where) apply(q query) (query, error) {
+	if q.Where != nil {
+		return q, errors.New("only one \"where\" condition supported at the moment")
+	}
+	q.Where = cn
+	return q, nil
+}
+func (cn limit) apply(q query) (query, error) {
+	if q.Limit != 0 {
+		return q, errors.New("only one \"limit\" condition supported at the moment")
+	}
+	q.Limit = cn.int
+	return q, nil
+}
+func (cn skip) apply(q query) (query, error) {
+	if q.Skip != 0 {
+		return q, errors.New("only one \"skip\" condition supported at the moment")
+	}
+	q.Skip = cn.int
+	return q, nil
+}
+func (cn by) apply(q query) (query, error) {
+	if q.By != nil {
+		return q, errors.New("only one \"by\" condition supported at the moment")
+	}
+	q.By = cn
+	return q, nil
 }

@@ -13,7 +13,38 @@ type (
 	}
 )
 
-func (r *reader) List(q QueryableSlice, limit, skip int) (err error) {
+func combineConditons(cn []Condition) (q query, err error) {
+	for _, c := range cn {
+		q, err = c.apply(q)
+		if err != nil {
+			return q, err
+		}
+	}
+
+	return q, nil
+}
+
+func (r *reader) List(s QueryableSlice, cnd ...Condition) (err error) {
+	q, err := combineConditons(cnd)
+	if err != nil {
+		return err
+	}
+
+	if q.Where != nil && q.By != nil {
+		return errors.New("Not implemented")
+	}
+
+	if q.Where != nil {
+		return r.listWhere(s, q.Where, q.Limit, q.Skip)
+	}
+	if q.By != nil {
+		return r.listBy(s, q.By, q.Limit, q.Skip)
+	}
+
+	return r.list(s, q.Limit, q.Skip)
+}
+
+func (r *reader) list(q QueryableSlice, limit, skip int) (err error) {
 	bkt := r.Bucket(q.BucketKey())
 	if bkt == nil {
 		return ErrIdxNotFound
@@ -41,7 +72,7 @@ func (r *reader) List(q QueryableSlice, limit, skip int) (err error) {
 	return err
 }
 
-func (r *reader) ListBy(q QueryableSlice, index Bucket, limit, skip int) (err error) {
+func (r *reader) listBy(q QueryableSlice, index Bucket, limit, skip int) (err error) {
 	if q == nil {
 		return errors.New(errNilPointer)
 	}
@@ -84,7 +115,7 @@ func (r *reader) ListBy(q QueryableSlice, index Bucket, limit, skip int) (err er
 	return err
 }
 
-func (r *reader) ListWhere(q QueryableSlice, index Index, limit, skip int) (err error) {
+func (r *reader) listWhere(q QueryableSlice, index Index, limit, skip int) (err error) {
 	if q == nil {
 		return errors.New(errNilPointer)
 	}
@@ -125,7 +156,10 @@ func (r *reader) ListWhere(q QueryableSlice, index Index, limit, skip int) (err 
 	return err
 }
 
-func (r *reader) First(q Queryable) (err error) {
+func (r *reader) First(q Queryable, query ...Condition) (err error) {
+	if len(query) > 0 {
+		return errors.New("Not implemented")
+	}
 	if reflect.ValueOf(q).IsNil() {
 		return errors.New(errNilPointer)
 	}
@@ -142,7 +176,10 @@ func (r *reader) First(q Queryable) (err error) {
 	return q.UnmarshalBinary(val)
 }
 
-func (r *reader) Last(q Queryable) (err error) {
+func (r *reader) Last(q Queryable, query ...Condition) (err error) {
+	if len(query) > 0 {
+		return errors.New("Not implemented")
+	}
 	if reflect.ValueOf(q).IsNil() {
 		return errors.New(errNilPointer)
 	}

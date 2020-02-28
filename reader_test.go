@@ -222,7 +222,7 @@ func Test_store_ListBy(t *testing.T) {
 
 			r := storableSlice{}
 
-			err := s.ListBy(&r, storableIndex{}, tt.limit, tt.skip)
+			err := s.List(&r, By(storableIndex{}), Limit(tt.limit), Skip(tt.skip))
 			assert.Nil(t, err)
 			assert.Equal(t, tt.expected, r)
 		})
@@ -270,7 +270,7 @@ func Test_store_ListWhere(t *testing.T) {
 
 			r := storableSlice{}
 
-			err := s.ListWhere(&r, storableIndex{IndexedField: tt.index}, tt.limit, tt.skip)
+			err := s.List(&r, Where(storableIndex{IndexedField: tt.index}), Limit(tt.limit), Skip(tt.skip))
 			assert.Nil(t, err)
 			assert.Equal(t, tt.expected, r)
 		})
@@ -301,7 +301,7 @@ func Test_store_List(t *testing.T) {
 			},
 		},
 		{
-			"Limit 1, kip 1 ",
+			"Limit 1, skip 1 ",
 			bucket{
 				bucketName: bucket{
 					id1: bytes(&storable{ID: id1, IndexedField: value1}),
@@ -321,7 +321,7 @@ func Test_store_List(t *testing.T) {
 
 			r := storableSlice{}
 
-			err := s.List(&r, tt.limit, tt.skip)
+			err := s.List(&r, Limit(tt.limit), Skip(tt.skip))
 			assert.Nil(t, err)
 			assert.Equal(t, tt.expected, r)
 		})
