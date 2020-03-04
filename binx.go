@@ -83,10 +83,10 @@ type (
 	}
 
 	query struct {
-		Where Index
-		By    Index
-		Skip  int
-		Limit int
+		where Index
+		by    Index
+		skip  int
+		limit int
 	}
 )
 
@@ -193,30 +193,30 @@ func (s *db) Put(st Indexable) (err error) {
 }
 
 func (cn where) apply(q query) (query, error) {
-	if q.Where != nil {
+	if q.where != nil {
 		return q, errors.New("only one \"where\" condition supported at the moment")
 	}
-	q.Where = cn
+	q.where = cn
 	return q, nil
 }
 func (cn limit) apply(q query) (query, error) {
-	if q.Limit != 0 {
+	if q.limit != 0 {
 		return q, errors.New("only one \"limit\" condition supported at the moment")
 	}
-	q.Limit = cn.int
+	q.limit = cn.int
 	return q, nil
 }
 func (cn skip) apply(q query) (query, error) {
-	if q.Skip != 0 {
+	if q.skip != 0 {
 		return q, errors.New("only one \"skip\" condition supported at the moment")
 	}
-	q.Skip = cn.int
+	q.skip = cn.int
 	return q, nil
 }
 func (cn by) apply(q query) (query, error) {
-	if q.By != nil {
+	if q.by != nil {
 		return q, errors.New("only one \"by\" condition supported at the moment")
 	}
-	q.By = cn
+	q.by = cn
 	return q, nil
 }

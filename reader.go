@@ -30,18 +30,18 @@ func (r *reader) List(s QueryableSlice, cnd ...Condition) (err error) {
 		return err
 	}
 
-	if q.Where != nil && q.By != nil {
+	if q.where != nil && q.by != nil {
 		return errors.New("Not implemented")
 	}
 
-	if q.Where != nil {
-		return r.listWhere(s, q.Where, q.Limit, q.Skip)
+	if q.where != nil {
+		return r.listWhere(s, q.where, q.limit, q.skip)
 	}
-	if q.By != nil {
-		return r.listBy(s, q.By, q.Limit, q.Skip)
+	if q.by != nil {
+		return r.listBy(s, q.by, q.limit, q.skip)
 	}
 
-	return r.list(s, q.Limit, q.Skip)
+	return r.list(s, q.limit, q.skip)
 }
 
 func (r *reader) list(q QueryableSlice, limit, skip int) (err error) {
