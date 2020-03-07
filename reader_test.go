@@ -45,7 +45,9 @@ func Test_store_Last(t *testing.T) {
 			s, teardown := prep(t, tt.existing)
 			defer teardown()
 
-			err := s.Last(tt.argument)
+			err := s.View(func(r Reader) error {
+				return r.Last(tt.argument)
+			})
 
 			if err != nil {
 				assert.Equal(t, tt.expectedError, err.Error())
@@ -120,7 +122,9 @@ func Test_store_Get(t *testing.T) {
 			s, teardown := prep(t, tt.existing)
 			defer teardown()
 
-			err := s.Get(tt.argument, tt.keyToGet)
+			err := s.View(func(r Reader) error {
+				return r.Get(tt.argument, tt.keyToGet)
+			})
 
 			if err != nil {
 				assert.Equal(t, tt.expectedError, err.Error())
@@ -220,11 +224,13 @@ func Test_store_ListBy(t *testing.T) {
 			s, teardown := prep(t, tt.existing)
 			defer teardown()
 
-			r := storableSlice{}
+			sl := storableSlice{}
 
-			err := s.List(&r, By(storableIndex{}), Limit(tt.limit), Skip(tt.skip))
+			err := s.View(func(r Reader) error {
+				return r.List(&sl, By(storableIndex{}), Limit(tt.limit), Skip(tt.skip))
+			})
 			assert.Nil(t, err)
-			assert.Equal(t, tt.expected, r)
+			assert.Equal(t, tt.expected, sl)
 		})
 	}
 }
@@ -268,11 +274,13 @@ func Test_store_ListWhere(t *testing.T) {
 			s, teardown := prep(t, tt.existing)
 			defer teardown()
 
-			r := storableSlice{}
+			sl := storableSlice{}
 
-			err := s.List(&r, Where(storableIndex{IndexedField: tt.index}), Limit(tt.limit), Skip(tt.skip))
+			err := s.View(func(r Reader) error {
+				return r.List(&sl, Where(storableIndex{IndexedField: tt.index}), Limit(tt.limit), Skip(tt.skip))
+			})
 			assert.Nil(t, err)
-			assert.Equal(t, tt.expected, r)
+			assert.Equal(t, tt.expected, sl)
 		})
 	}
 }
@@ -319,11 +327,14 @@ func Test_store_List(t *testing.T) {
 			s, teardown := prep(t, tt.existing)
 			defer teardown()
 
-			r := storableSlice{}
+			sl := storableSlice{}
 
-			err := s.List(&r, Limit(tt.limit), Skip(tt.skip))
+			err := s.View(func(r Reader) error {
+				return r.List(&sl, Limit(tt.limit), Skip(tt.skip))
+			})
 			assert.Nil(t, err)
-			assert.Equal(t, tt.expected, r)
+			assert.Equal(t, tt.expected, sl)
+
 		})
 	}
 }

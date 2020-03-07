@@ -97,16 +97,22 @@ func Test_store_Put_WithIndex(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, teardown := prep(t, bucket{bucketName: bucket{}, indexBucketName: bucket{}, masterIndexBucketName: bucket{}})
+			db, teardown := prep(t, bucket{bucketName: bucket{}, indexBucketName: bucket{}, masterIndexBucketName: bucket{}})
 			defer teardown()
 
-			for _, v := range tt.argument {
-				err := s.Put(v)
-				assert.Nil(t, err)
-			}
+			err := db.Update(func(r Reader, w Writer) error {
+				for _, v := range tt.argument {
+					err := w.Put(v)
+					if err != nil {
+						return err
+					}
+				}
+				return nil
+			})
 
+			assert.Nil(t, err)
 			state := bucket{}
-			err := s.DB.View(readBuckets(&state))
+			err = db.DB.View(readBuckets(&state))
 			assert.Nil(t, err)
 
 			assert.Equal(t, tt.expected, state)

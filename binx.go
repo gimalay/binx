@@ -41,11 +41,9 @@ type (
 	}
 
 	DB interface {
-		Writer
-
 		Close() error
-		Update(func(db Writer) error) error
-		View(func(db Reader) error) error
+		Update(func(Reader, Writer) error) error
+		View(func(Reader) error) error
 	}
 
 	Reader interface {
@@ -56,7 +54,6 @@ type (
 	}
 
 	Writer interface {
-		Reader
 		Put(Indexable) error
 	}
 
@@ -138,57 +135,15 @@ func (s *db) Close() error {
 	return s.DB.Close()
 }
 
-func (s *db) Update(fn func(w Writer) error) error {
+func (s *db) Update(fn func(r Reader, w Writer) error) error {
 	return s.DB.Update(func(tx *bolt.Tx) error {
-		return fn(Writer(&writer{tx, &reader{tx}}))
+		return fn(&reader{tx}, &writer{tx})
 	})
 }
 
 func (s *db) View(fn func(w Reader) error) error {
 	return s.DB.View(func(tx *bolt.Tx) error {
 		return fn(Reader(&reader{tx}))
-	})
-}
-
-func (s *db) First(q Queryable, cnd ...Condition) (err error) {
-	err = s.DB.View(func(tx *bolt.Tx) error {
-		r := &reader{tx}
-		err = r.First(q, cnd...)
-		return err
-	})
-	return err
-}
-func (s *db) Last(q Queryable, cnd ...Condition) (err error) {
-	err = s.DB.View(func(tx *bolt.Tx) error {
-		r := &reader{tx}
-		err = r.Last(q, cnd...)
-		return err
-	})
-	return err
-}
-
-func (s *db) Get(q Queryable, key []byte) (err error) {
-	err = s.DB.View(func(tx *bolt.Tx) error {
-		r := &reader{tx}
-		err = r.Get(q, key)
-		return err
-	})
-	return err
-}
-
-func (s *db) List(qs QueryableSlice, cnd ...Condition) (err error) {
-	err = s.DB.View(func(tx *bolt.Tx) error {
-		r := &reader{tx}
-		err = r.List(qs, cnd...)
-		return err
-	})
-	return err
-}
-
-func (s *db) Put(st Indexable) (err error) {
-	return s.DB.Update(func(tx *bolt.Tx) error {
-		w := &writer{tx, &reader{tx}}
-		return w.Put(st)
 	})
 }
 

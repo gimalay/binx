@@ -8,7 +8,6 @@ import (
 type (
 	writer struct {
 		*bolt.Tx
-		*reader
 	}
 )
 
