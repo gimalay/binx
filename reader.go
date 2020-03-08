@@ -1,6 +1,7 @@
 package binx
 
 import (
+	"bytes"
 	"reflect"
 
 	bolt "github.com/coreos/bbolt"
@@ -13,35 +14,35 @@ type (
 	}
 )
 
-func combineConditons(cn []Condition) (q query, err error) {
-	for _, c := range cn {
-		q, err = c.apply(q)
-		if err != nil {
-			return q, err
-		}
-	}
-
-	return q, nil
+func (r *reader) List(s QueryableSlice) (err error) {
+	return r.list(s, 0, 0)
 }
-
-func (r *reader) List(s QueryableSlice, cnd ...Condition) (err error) {
-	q, err := combineConditons(cnd)
+func (r *reader) Query(s QueryableSlice, qr Query) error {
+	err := qr.validate()
 	if err != nil {
 		return err
 	}
 
-	if q.where != nil && q.by != nil {
-		return errors.New("Not implemented")
+	switch q := qr.(type) {
+	case By:
+		return r.listBy(s, q.Index, q.Limit, q.Skip)
+	case Where:
+		return r.listWhere(s, q.Value, q.Limit, q.Skip)
+	case Page:
+		return r.list(s, q.Limit, q.Skip)
+	case Range:
+		if q.From != nil {
+			return r.listRange(s, q.From, q.From, q.To, q.Limit, q.Skip)
+		}
+
+		if q.To != nil {
+			return r.listRange(s, q.To, q.From, q.To, q.Limit, q.Skip)
+		}
+
+		return r.list(s, q.Limit, q.Skip)
 	}
 
-	if q.where != nil {
-		return r.listWhere(s, q.where, q.limit, q.skip)
-	}
-	if q.by != nil {
-		return r.listBy(s, q.by, q.limit, q.skip)
-	}
-
-	return r.list(s, q.limit, q.skip)
+	return errors.New("unknow query")
 }
 
 func (r *reader) list(q QueryableSlice, limit, skip int) (err error) {
@@ -81,18 +82,18 @@ func (r *reader) listBy(q QueryableSlice, index Bucket, limit, skip int) (err er
 		return ErrIdxNotFound
 	}
 
-	idxBkt := r.Bucket(index.BucketKey())
-	if idxBkt == nil {
+	ix := r.Bucket(index.BucketKey())
+	if ix == nil {
 		return ErrIdxNotFound
 	}
 
-	ic := idxBkt.Cursor()
+	ic := ix.Cursor()
 	n := 0
 	l := 0
-	for ivk, _ := ic.First(); ivk != nil; ivk, _ = ic.Next() {
+	for ik, _ := ic.First(); ik != nil; ik, _ = ic.Next() {
 
-		keyBkt := idxBkt.Bucket(ivk)
-		kc := keyBkt.Cursor()
+		kb := ix.Bucket(ik)
+		kc := kb.Cursor()
 
 		for k, _ := kc.First(); k != nil; k, _ = kc.Next() {
 			n++
@@ -115,6 +116,69 @@ func (r *reader) listBy(q QueryableSlice, index Bucket, limit, skip int) (err er
 	return err
 }
 
+func (r *reader) listRange(q QueryableSlice, index, from, to Index, limit, skip int) error {
+
+	if index == nil {
+		return errors.New("cannot build range with nil index")
+	}
+
+	if to != nil {
+		if !bytes.Equal(index.BucketKey(), to.BucketKey()) {
+			return errors.New("cannot build range with two different indexes")
+		}
+	}
+	if from != nil {
+		if !bytes.Equal(index.BucketKey(), from.BucketKey()) {
+			return errors.New("cannot build range with two different indexes")
+		}
+	}
+
+	if q == nil {
+		return errors.New(errNilPointer)
+	}
+	bkt := r.Bucket(q.BucketKey())
+	if bkt == nil {
+		return ErrIdxNotFound
+	}
+
+	ix := r.Bucket(index.BucketKey())
+	if ix == nil {
+		return ErrIdxNotFound
+	}
+	ic := ix.Cursor()
+	n := 0
+	l := 0
+
+	s, _ := ic.First()
+	if from != nil {
+		s, _ = ic.Seek(from.Key())
+	}
+
+	for ik := s; ik != nil && (to == nil || bytes.Compare(ik, to.Key()) <= 0); ik, _ = ic.Next() {
+
+		kb := ix.Bucket(ik)
+		kc := kb.Cursor()
+
+		for k, _ := kc.First(); k != nil; k, _ = kc.Next() {
+			n++
+			if skip > 0 && n <= skip {
+				continue
+			}
+
+			if err := q.AppendBinary(bkt.Get(k)); err != nil {
+				return err
+			}
+
+			l++
+			if limit > 0 && l >= limit {
+				return nil
+			}
+		}
+	}
+
+	return nil
+}
+
 func (r *reader) listWhere(q QueryableSlice, index Index, limit, skip int) (err error) {
 	if q == nil {
 		return errors.New(errNilPointer)
@@ -124,17 +188,17 @@ func (r *reader) listWhere(q QueryableSlice, index Index, limit, skip int) (err 
 		return ErrIdxNotFound
 	}
 
-	idxBkt := r.Bucket(index.BucketKey())
-	if idxBkt == nil {
+	ib := r.Bucket(index.BucketKey())
+	if ib == nil {
 		return ErrIdxNotFound
 	}
 
-	keyBkt := idxBkt.Bucket(index.Key())
-	if keyBkt == nil {
+	ik := ib.Bucket(index.Key())
+	if ik == nil {
 		return nil
 	}
 
-	c := keyBkt.Cursor()
+	c := ik.Cursor()
 	n := 0
 	l := 0
 	for k, _ := c.First(); k != nil; k, _ = c.Next() {
@@ -156,10 +220,7 @@ func (r *reader) listWhere(q QueryableSlice, index Index, limit, skip int) (err 
 	return err
 }
 
-func (r *reader) First(q Queryable, query ...Condition) (err error) {
-	if len(query) > 0 {
-		return errors.New("Not implemented")
-	}
+func (r *reader) First(q Queryable) (err error) {
 	if reflect.ValueOf(q).IsNil() {
 		return errors.New(errNilPointer)
 	}
@@ -176,10 +237,7 @@ func (r *reader) First(q Queryable, query ...Condition) (err error) {
 	return q.UnmarshalBinary(val)
 }
 
-func (r *reader) Last(q Queryable, query ...Condition) (err error) {
-	if len(query) > 0 {
-		return errors.New("Not implemented")
-	}
+func (r *reader) Last(q Queryable) (err error) {
 	if reflect.ValueOf(q).IsNil() {
 		return errors.New(errNilPointer)
 	}

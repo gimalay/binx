@@ -65,8 +65,8 @@ func (e *indexable) Indexes() []Index {
 	}
 }
 
-func (e storableIndex) BucketKey() []byte { return []byte(indexBucketName) }
-func (e storableIndex) Key() []byte       { return []byte(e.IndexedField) }
+func (e *storableIndex) BucketKey() []byte { return []byte(indexBucketName) }
+func (e *storableIndex) Key() []byte       { return []byte(e.IndexedField) }
 
 func (e *storable) Key() []byte                              { return []byte(e.ID) }
 func (e *storable) BucketKey() []byte                        { return []byte(bucketName) }

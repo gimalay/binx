@@ -2,7 +2,6 @@ package binx
 
 import (
 	"encoding"
-	"errors"
 
 	bolt "github.com/coreos/bbolt"
 )
@@ -48,56 +47,56 @@ type (
 
 	Reader interface {
 		Get(q Queryable, key []byte) error
-		List(qs QueryableSlice, cnd ...Condition) error
-		Last(q Queryable, cnd ...Condition) error
-		First(q Queryable, cnd ...Condition) error
+		List(qs QueryableSlice) error
+		Query(qs QueryableSlice, qr Query) error
+		Last(q Queryable) error
+		First(q Queryable) error
 	}
 
 	Writer interface {
 		Put(Indexable) error
 	}
 
-	Condition interface {
-		apply(query) (query, error)
+	Query interface {
+		validate() error
 	}
 )
+
+func (q Page) validate() error  { return nil }
+func (q By) validate() error    { return nil }
+func (q Range) validate() error { return nil }
+func (q Where) validate() error { return nil }
 
 type (
-	where struct {
-		Index
+	Page struct {
+		Skip  int
+		Limit int
 	}
-
-	by struct {
-		Index
+	By struct {
+		Index Index
+		Skip  int
+		Limit int
 	}
-
-	limit struct {
-		int
+	Range struct {
+		From  Index
+		To    Index
+		Skip  int
+		Limit int
 	}
-
-	skip struct {
-		int
-	}
-
-	query struct {
-		where Index
-		by    Index
-		skip  int
-		limit int
+	Where struct {
+		Value Index
+		Skip  int
+		Limit int
 	}
 )
 
-func Where(idx Index) Condition {
-	return where{idx}
-}
-func By(idx Index) Condition {
-	return by{idx}
-}
-func Limit(n int) Condition {
-	return limit{n}
-}
-func Skip(n int) Condition {
-	return skip{n}
+type query struct {
+	from  Index
+	to    Index
+	where Index
+	by    Index
+	skip  int
+	limit int
 }
 
 func Open(fileName string, structure []Indexable) (DB, error) {
@@ -143,35 +142,6 @@ func (s *db) Update(fn func(r Reader, w Writer) error) error {
 
 func (s *db) View(fn func(w Reader) error) error {
 	return s.DB.View(func(tx *bolt.Tx) error {
-		return fn(Reader(&reader{tx}))
+		return fn(&reader{tx})
 	})
-}
-
-func (cn where) apply(q query) (query, error) {
-	if q.where != nil {
-		return q, errors.New("only one \"where\" condition supported at the moment")
-	}
-	q.where = cn
-	return q, nil
-}
-func (cn limit) apply(q query) (query, error) {
-	if q.limit != 0 {
-		return q, errors.New("only one \"limit\" condition supported at the moment")
-	}
-	q.limit = cn.int
-	return q, nil
-}
-func (cn skip) apply(q query) (query, error) {
-	if q.skip != 0 {
-		return q, errors.New("only one \"skip\" condition supported at the moment")
-	}
-	q.skip = cn.int
-	return q, nil
-}
-func (cn by) apply(q query) (query, error) {
-	if q.by != nil {
-		return q, errors.New("only one \"by\" condition supported at the moment")
-	}
-	q.by = cn
-	return q, nil
 }

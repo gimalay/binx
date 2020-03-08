@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func bytes(m Storable) []byte {
+func bt(m Storable) []byte {
 	b, _ := m.MarshalBinary()
 	return b
 }
@@ -22,7 +22,7 @@ func Test_store_Put_WithIndex(t *testing.T) {
 			argument: []Indexable{&indexable{ID: id1, IndexedField: value1}},
 			expected: bucket{
 				bucketName: bucket{
-					id1: bytes(&indexable{ID: id1, IndexedField: value1}),
+					id1: bt(&indexable{ID: id1, IndexedField: value1}),
 				},
 				indexBucketName: bucket{
 					value1: bucket{id1: []byte{}},
@@ -38,7 +38,7 @@ func Test_store_Put_WithIndex(t *testing.T) {
 			},
 			expected: bucket{
 				bucketName: bucket{
-					id1: bytes(&indexable{ID: id1, IndexedField: value2}),
+					id1: bt(&indexable{ID: id1, IndexedField: value2}),
 				},
 
 				indexBucketName: bucket{
@@ -56,8 +56,8 @@ func Test_store_Put_WithIndex(t *testing.T) {
 			},
 			bucket{
 				bucketName: bucket{
-					id1: bytes(&indexable{ID: id1, IndexedField: value1}),
-					id2: bytes(&indexable{ID: id2, IndexedField: value2}),
+					id1: bt(&indexable{ID: id1, IndexedField: value1}),
+					id2: bt(&indexable{ID: id2, IndexedField: value2}),
 				},
 
 				indexBucketName: bucket{
@@ -79,8 +79,8 @@ func Test_store_Put_WithIndex(t *testing.T) {
 			},
 			bucket{
 				bucketName: bucket{
-					id1: bytes(&indexable{ID: id1, IndexedField: value3}),
-					id2: bytes(&indexable{ID: id2, IndexedField: value2}),
+					id1: bt(&indexable{ID: id1, IndexedField: value3}),
+					id2: bt(&indexable{ID: id2, IndexedField: value2}),
 				},
 
 				indexBucketName: bucket{

@@ -18,8 +18,8 @@ func Test_store_Last(t *testing.T) {
 			name: "Get last storable",
 			existing: bucket{
 				bucketName: bucket{
-					id1: bytes(&storable{ID: id1, IndexedField: value1}),
-					id2: bytes(&storable{ID: id2, IndexedField: value2}),
+					id1: bt(&storable{ID: id1, IndexedField: value1}),
+					id2: bt(&storable{ID: id2, IndexedField: value2}),
 				},
 			},
 			argument: &storable{},
@@ -28,7 +28,7 @@ func Test_store_Last(t *testing.T) {
 		{
 			name: "nil value",
 			existing: bucket{bucketName: bucket{
-				id1: bytes(&storable{ID: id1, IndexedField: value1}),
+				id1: bt(&storable{ID: id1, IndexedField: value1}),
 			}},
 			argument:      nil,
 			expectedError: errNilPointer,
@@ -73,8 +73,8 @@ func Test_store_Get(t *testing.T) {
 			name: "Get storable entry id1",
 			existing: bucket{
 				bucketName: bucket{
-					id1: bytes(&storable{ID: id1, IndexedField: value1}),
-					id2: bytes(&storable{ID: id2, IndexedField: value2}),
+					id1: bt(&storable{ID: id1, IndexedField: value1}),
+					id2: bt(&storable{ID: id2, IndexedField: value2}),
 				},
 			},
 			keyToGet: []byte(id1),
@@ -85,8 +85,8 @@ func Test_store_Get(t *testing.T) {
 			name: "Get storable entry with id2",
 			existing: bucket{
 				bucketName: bucket{
-					id1: bytes(&storable{ID: id1, IndexedField: value1}),
-					id2: bytes(&storable{ID: id2, IndexedField: value2}),
+					id1: bt(&storable{ID: id1, IndexedField: value1}),
+					id2: bt(&storable{ID: id2, IndexedField: value2}),
 				},
 			},
 			keyToGet: []byte(id2),
@@ -103,7 +103,7 @@ func Test_store_Get(t *testing.T) {
 		{
 			name: "nil value",
 			existing: bucket{bucketName: bucket{
-				id1: bytes(&storable{ID: id1, IndexedField: value1}),
+				id1: bt(&storable{ID: id1, IndexedField: value1}),
 			}},
 			keyToGet:      []byte(id1),
 			argument:      nil,
@@ -137,6 +137,204 @@ func Test_store_Get(t *testing.T) {
 	}
 }
 
+func Test_store_ListRange(t *testing.T) {
+	tests := []struct {
+		name        string
+		existing    bucket
+		index       string
+		from, to    Index
+		limit, skip int
+		expected    storableSlice
+	}{
+		{
+			name: "range not specified",
+			existing: bucket{
+				bucketName: bucket{
+					id1: bt(&storable{ID: id1, IndexedField: value1}),
+					id2: bt(&storable{ID: id2, IndexedField: value2}),
+					id3: bt(&storable{ID: id3, IndexedField: value3}),
+				},
+				indexBucketName: bucket{
+					value1: bucket{
+						id1: []byte{},
+					},
+					value2: bucket{
+						id2: []byte{},
+					},
+					value3: bucket{
+						id3: []byte{},
+					},
+				},
+			},
+			from:  nil,
+			to:    nil,
+			limit: 0,
+			skip:  0,
+			expected: storableSlice{
+				storable{ID: id1, IndexedField: value1},
+				storable{ID: id2, IndexedField: value2},
+				storable{ID: id3, IndexedField: value3},
+			},
+		},
+		{
+			name: "range from specified",
+			existing: bucket{
+				bucketName: bucket{
+					id1: bt(&storable{ID: id1, IndexedField: value1}),
+					id2: bt(&storable{ID: id2, IndexedField: value2}),
+					id3: bt(&storable{ID: id3, IndexedField: value3}),
+				},
+				indexBucketName: bucket{
+					value1: bucket{
+						id1: []byte{},
+					},
+					value2: bucket{
+						id2: []byte{},
+					},
+					value3: bucket{
+						id3: []byte{},
+					},
+				},
+			},
+			from:  &storableIndex{IndexedField: value2},
+			to:    nil,
+			limit: 0,
+			skip:  0,
+			expected: storableSlice{
+				storable{ID: id2, IndexedField: value2},
+				storable{ID: id3, IndexedField: value3},
+			},
+		},
+		{
+			name: "range to specified",
+			existing: bucket{
+				bucketName: bucket{
+					id1: bt(&storable{ID: id1, IndexedField: value1}),
+					id2: bt(&storable{ID: id2, IndexedField: value2}),
+					id3: bt(&storable{ID: id3, IndexedField: value3}),
+				},
+				indexBucketName: bucket{
+					value1: bucket{
+						id1: []byte{},
+					},
+					value2: bucket{
+						id2: []byte{},
+					},
+					value3: bucket{
+						id3: []byte{},
+					},
+				},
+			},
+			from:  nil,
+			to:    &storableIndex{IndexedField: value2},
+			limit: 0,
+			skip:  0,
+			expected: storableSlice{
+				storable{ID: id1, IndexedField: value1},
+				storable{ID: id2, IndexedField: value2},
+			},
+		},
+		{
+			name: "range to skip 1 specified",
+			existing: bucket{
+				bucketName: bucket{
+					id1: bt(&storable{ID: id1, IndexedField: value1}),
+					id2: bt(&storable{ID: id2, IndexedField: value2}),
+					id3: bt(&storable{ID: id3, IndexedField: value3}),
+				},
+				indexBucketName: bucket{
+					value1: bucket{
+						id1: []byte{},
+					},
+					value2: bucket{
+						id2: []byte{},
+					},
+					value3: bucket{
+						id3: []byte{},
+					},
+				},
+			},
+			from:  nil,
+			to:    &storableIndex{IndexedField: value2},
+			limit: 0,
+			skip:  1,
+			expected: storableSlice{
+				storable{ID: id2, IndexedField: value2},
+			},
+		},
+		{
+			name: "range to and limit specified",
+			existing: bucket{
+				bucketName: bucket{
+					id1: bt(&storable{ID: id1, IndexedField: value1}),
+					id2: bt(&storable{ID: id2, IndexedField: value2}),
+					id3: bt(&storable{ID: id3, IndexedField: value3}),
+				},
+				indexBucketName: bucket{
+					value1: bucket{
+						id1: []byte{},
+					},
+					value2: bucket{
+						id2: []byte{},
+					},
+					value3: bucket{
+						id3: []byte{},
+					},
+				},
+			},
+			from:  nil,
+			to:    &storableIndex{IndexedField: value2},
+			limit: 1,
+			skip:  0,
+			expected: storableSlice{
+				storable{ID: id1, IndexedField: value1},
+			},
+		},
+		{
+			name: "range from and to specified",
+			existing: bucket{
+				bucketName: bucket{
+					id1: bt(&storable{ID: id1, IndexedField: value1}),
+					id2: bt(&storable{ID: id2, IndexedField: value2}),
+					id3: bt(&storable{ID: id3, IndexedField: value3}),
+				},
+				indexBucketName: bucket{
+					value1: bucket{
+						id1: []byte{},
+					},
+					value2: bucket{
+						id2: []byte{},
+					},
+					value3: bucket{
+						id3: []byte{},
+					},
+				},
+			},
+			from:  &storableIndex{IndexedField: value2},
+			to:    &storableIndex{IndexedField: value2},
+			limit: 0,
+			skip:  0,
+			expected: storableSlice{
+				storable{ID: id2, IndexedField: value2},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, teardown := prep(t, tt.existing)
+			defer teardown()
+
+			sl := storableSlice{}
+
+			err := s.View(func(r Reader) error {
+				return r.Query(&sl, Range{From: tt.from, To: tt.to, Limit: tt.limit, Skip: tt.skip})
+			})
+			assert.Nil(t, err)
+			assert.Equal(t, tt.expected, sl)
+		})
+	}
+}
+
 func Test_store_ListBy(t *testing.T) {
 
 	tests := []struct {
@@ -150,9 +348,9 @@ func Test_store_ListBy(t *testing.T) {
 			name: "list by index",
 			existing: bucket{
 				bucketName: bucket{
-					id1: bytes(&storable{ID: id1, IndexedField: value1}),
-					id2: bytes(&storable{ID: id2, IndexedField: value2}),
-					id3: bytes(&storable{ID: id3, IndexedField: value2}),
+					id1: bt(&storable{ID: id1, IndexedField: value1}),
+					id2: bt(&storable{ID: id2, IndexedField: value2}),
+					id3: bt(&storable{ID: id3, IndexedField: value2}),
 				},
 				indexBucketName: bucket{
 					value1: bucket{
@@ -175,9 +373,9 @@ func Test_store_ListBy(t *testing.T) {
 			name: "list by index skip and limit",
 			existing: bucket{
 				bucketName: bucket{
-					id1: bytes(&storable{ID: id1, IndexedField: value1}),
-					id2: bytes(&storable{ID: id2, IndexedField: value2}),
-					id3: bytes(&storable{ID: id3, IndexedField: value2}),
+					id1: bt(&storable{ID: id1, IndexedField: value1}),
+					id2: bt(&storable{ID: id2, IndexedField: value2}),
+					id3: bt(&storable{ID: id3, IndexedField: value2}),
 				},
 				indexBucketName: bucket{
 					value1: bucket{
@@ -199,9 +397,9 @@ func Test_store_ListBy(t *testing.T) {
 			name: "list by index limit",
 			existing: bucket{
 				bucketName: bucket{
-					id1: bytes(&storable{ID: id1, IndexedField: value1}),
-					id2: bytes(&storable{ID: id2, IndexedField: value2}),
-					id3: bytes(&storable{ID: id3, IndexedField: value3}),
+					id1: bt(&storable{ID: id1, IndexedField: value1}),
+					id2: bt(&storable{ID: id2, IndexedField: value2}),
+					id3: bt(&storable{ID: id3, IndexedField: value3}),
 				},
 				indexBucketName: bucket{
 					value1: bucket{
@@ -227,7 +425,7 @@ func Test_store_ListBy(t *testing.T) {
 			sl := storableSlice{}
 
 			err := s.View(func(r Reader) error {
-				return r.List(&sl, By(storableIndex{}), Limit(tt.limit), Skip(tt.skip))
+				return r.Query(&sl, By{Index: &storableIndex{}, Limit: tt.limit, Skip: tt.skip})
 			})
 			assert.Nil(t, err)
 			assert.Equal(t, tt.expected, sl)
@@ -248,9 +446,9 @@ func Test_store_ListWhere(t *testing.T) {
 			name: "list where index",
 			existing: bucket{
 				bucketName: bucket{
-					id1: bytes(&storable{ID: id1, IndexedField: value1}),
-					id2: bytes(&storable{ID: id2, IndexedField: value2}),
-					id3: bytes(&storable{ID: id3, IndexedField: value3}),
+					id1: bt(&storable{ID: id1, IndexedField: value1}),
+					id2: bt(&storable{ID: id2, IndexedField: value2}),
+					id3: bt(&storable{ID: id3, IndexedField: value3}),
 				},
 				indexBucketName: bucket{
 					value1: bucket{
@@ -277,7 +475,7 @@ func Test_store_ListWhere(t *testing.T) {
 			sl := storableSlice{}
 
 			err := s.View(func(r Reader) error {
-				return r.List(&sl, Where(storableIndex{IndexedField: tt.index}), Limit(tt.limit), Skip(tt.skip))
+				return r.Query(&sl, Where{Value: &storableIndex{IndexedField: tt.index}, Limit: tt.limit, Skip: tt.skip})
 			})
 			assert.Nil(t, err)
 			assert.Equal(t, tt.expected, sl)
@@ -297,9 +495,9 @@ func Test_store_List(t *testing.T) {
 			"List 3 storable",
 			bucket{
 				bucketName: bucket{
-					id1: bytes(&storable{ID: id1, IndexedField: value1}),
-					id2: bytes(&storable{ID: id2, IndexedField: value2}),
-					id3: bytes(&storable{ID: id3, IndexedField: value3}),
+					id1: bt(&storable{ID: id1, IndexedField: value1}),
+					id2: bt(&storable{ID: id2, IndexedField: value2}),
+					id3: bt(&storable{ID: id3, IndexedField: value3}),
 				},
 			}, 0, 0,
 			storableSlice{
@@ -312,9 +510,9 @@ func Test_store_List(t *testing.T) {
 			"Limit 1, skip 1 ",
 			bucket{
 				bucketName: bucket{
-					id1: bytes(&storable{ID: id1, IndexedField: value1}),
-					id2: bytes(&storable{ID: id2, IndexedField: value2}),
-					id3: bytes(&storable{ID: id3, IndexedField: value3}),
+					id1: bt(&storable{ID: id1, IndexedField: value1}),
+					id2: bt(&storable{ID: id2, IndexedField: value2}),
+					id3: bt(&storable{ID: id3, IndexedField: value3}),
 				},
 			}, 1, 1,
 			storableSlice{
@@ -330,7 +528,7 @@ func Test_store_List(t *testing.T) {
 			sl := storableSlice{}
 
 			err := s.View(func(r Reader) error {
-				return r.List(&sl, Limit(tt.limit), Skip(tt.skip))
+				return r.Query(&sl, Page{Limit: tt.limit, Skip: tt.skip})
 			})
 			assert.Nil(t, err)
 			assert.Equal(t, tt.expected, sl)
