@@ -3,107 +3,54 @@ package binx
 import (
 	"testing"
 
+	bolt "github.com/coreos/bbolt"
 	"github.com/stretchr/testify/assert"
 )
-
-func Test_store_Last(t *testing.T) {
-	tests := []struct {
-		name          string
-		existing      bucket
-		argument      *storable
-		expected      storable
-		expectedError string
-	}{
-		{
-			name: "Get last storable",
-			existing: bucket{
-				bucketName: bucket{
-					id1: bt(&storable{ID: id1, IndexedField: value1}),
-					id2: bt(&storable{ID: id2, IndexedField: value2}),
-				},
-			},
-			argument: &storable{},
-			expected: storable{ID: id2, IndexedField: value2},
-		},
-		{
-			name: "nil value",
-			existing: bucket{bucketName: bucket{
-				id1: bt(&storable{ID: id1, IndexedField: value1}),
-			}},
-			argument:      nil,
-			expectedError: errNilPointer,
-		},
-		{
-			name:          "key not found",
-			existing:      bucket{bucketName: bucket{}},
-			argument:      &storable{},
-			expectedError: ErrNotFound.Error(),
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s, teardown := prep(t, tt.existing)
-			defer teardown()
-
-			err := s.View(func(r Reader) error {
-				return r.Last(tt.argument)
-			})
-
-			if err != nil {
-				assert.Equal(t, tt.expectedError, err.Error())
-				return
-			}
-
-			assert.Nil(t, err)
-			assert.Equal(t, tt.expected, *tt.argument)
-		})
-	}
-}
 
 func Test_store_Get(t *testing.T) {
 	tests := []struct {
 		name          string
 		existing      bucket
 		keyToGet      []byte
-		argument      *storable
-		expected      storable
+		argument      Queryable
+		expected      Queryable
 		expectedError string
 	}{
 		{
-			name: "Get storable entry id1",
+			name: "Get indexable entry id1",
 			existing: bucket{
 				bucketName: bucket{
-					id1: bt(&storable{ID: id1, IndexedField: value1}),
-					id2: bt(&storable{ID: id2, IndexedField: value2}),
+					id1: bt(&indexable{ID: id1, IndexedField: value1}),
+					id2: bt(&indexable{ID: id2, IndexedField: value2}),
 				},
 			},
 			keyToGet: []byte(id1),
-			argument: &storable{},
-			expected: storable{ID: id1, IndexedField: value1},
+			argument: &indexable{},
+			expected: &indexable{ID: id1, IndexedField: value1},
 		},
 		{
-			name: "Get storable entry with id2",
+			name: "Get indexable entry with id2",
 			existing: bucket{
 				bucketName: bucket{
-					id1: bt(&storable{ID: id1, IndexedField: value1}),
-					id2: bt(&storable{ID: id2, IndexedField: value2}),
+					id1: bt(&indexable{ID: id1, IndexedField: value1}),
+					id2: bt(&indexable{ID: id2, IndexedField: value2}),
 				},
 			},
 			keyToGet: []byte(id2),
-			argument: &storable{},
-			expected: storable{ID: id2, IndexedField: value2},
+			argument: &indexable{},
+			expected: &indexable{ID: id2, IndexedField: value2},
 		},
 		{
 			name:          "key is empty",
 			existing:      bucket{bucketName: bucket{}},
 			keyToGet:      []byte{},
-			argument:      &storable{},
+			argument:      &indexable{},
 			expectedError: errEmptyKey,
 		},
 		{
 			name: "nil value",
 			existing: bucket{bucketName: bucket{
-				id1: bt(&storable{ID: id1, IndexedField: value1}),
+				id1: bt(&indexable{ID: id1, IndexedField: value1}),
 			}},
 			keyToGet:      []byte(id1),
 			argument:      nil,
@@ -113,7 +60,7 @@ func Test_store_Get(t *testing.T) {
 			name:          "key not found",
 			existing:      bucket{bucketName: bucket{}},
 			keyToGet:      []byte(id1),
-			argument:      &storable{},
+			argument:      &indexable{},
 			expectedError: ErrNotFound.Error(),
 		},
 	}
@@ -122,7 +69,8 @@ func Test_store_Get(t *testing.T) {
 			s, teardown := prep(t, tt.existing)
 			defer teardown()
 
-			err := s.View(func(r Reader) error {
+			err := s.View(func(tx *bolt.Tx) error {
+				r := &reader{tx}
 				return r.Get(tt.argument, tt.keyToGet)
 			})
 
@@ -132,27 +80,26 @@ func Test_store_Get(t *testing.T) {
 			}
 
 			assert.Nil(t, err)
-			assert.Equal(t, tt.expected, *tt.argument)
+			assert.Equal(t, tt.expected, tt.argument)
 		})
 	}
 }
 
 func Test_store_ListRange(t *testing.T) {
 	tests := []struct {
-		name        string
-		existing    bucket
-		index       string
-		from, to    Index
-		limit, skip int
-		expected    storableSlice
+		name     string
+		existing bucket
+		argument Queryable
+		from, to Index
+		expected Queryable
 	}{
 		{
 			name: "range not specified",
 			existing: bucket{
 				bucketName: bucket{
-					id1: bt(&storable{ID: id1, IndexedField: value1}),
-					id2: bt(&storable{ID: id2, IndexedField: value2}),
-					id3: bt(&storable{ID: id3, IndexedField: value3}),
+					id1: bt(&indexable{ID: id1, IndexedField: value1}),
+					id2: bt(&indexable{ID: id2, IndexedField: value2}),
+					id3: bt(&indexable{ID: id3, IndexedField: value3}),
 				},
 				indexBucketName: bucket{
 					value1: bucket{
@@ -166,23 +113,22 @@ func Test_store_ListRange(t *testing.T) {
 					},
 				},
 			},
-			from:  nil,
-			to:    nil,
-			limit: 0,
-			skip:  0,
-			expected: storableSlice{
-				storable{ID: id1, IndexedField: value1},
-				storable{ID: id2, IndexedField: value2},
-				storable{ID: id3, IndexedField: value3},
+			from:     nil,
+			to:       nil,
+			argument: &indexableSlice{},
+			expected: &indexableSlice{
+				indexable{ID: id1, IndexedField: value1},
+				indexable{ID: id2, IndexedField: value2},
+				indexable{ID: id3, IndexedField: value3},
 			},
 		},
 		{
 			name: "range from specified",
 			existing: bucket{
 				bucketName: bucket{
-					id1: bt(&storable{ID: id1, IndexedField: value1}),
-					id2: bt(&storable{ID: id2, IndexedField: value2}),
-					id3: bt(&storable{ID: id3, IndexedField: value3}),
+					id1: bt(&indexable{ID: id1, IndexedField: value1}),
+					id2: bt(&indexable{ID: id2, IndexedField: value2}),
+					id3: bt(&indexable{ID: id3, IndexedField: value3}),
 				},
 				indexBucketName: bucket{
 					value1: bucket{
@@ -196,22 +142,21 @@ func Test_store_ListRange(t *testing.T) {
 					},
 				},
 			},
-			from:  &storableIndex{IndexedField: value2},
-			to:    nil,
-			limit: 0,
-			skip:  0,
-			expected: storableSlice{
-				storable{ID: id2, IndexedField: value2},
-				storable{ID: id3, IndexedField: value3},
+			from:     index(value2),
+			to:       nil,
+			argument: &indexableSlice{},
+			expected: &indexableSlice{
+				indexable{ID: id2, IndexedField: value2},
+				indexable{ID: id3, IndexedField: value3},
 			},
 		},
 		{
 			name: "range to specified",
 			existing: bucket{
 				bucketName: bucket{
-					id1: bt(&storable{ID: id1, IndexedField: value1}),
-					id2: bt(&storable{ID: id2, IndexedField: value2}),
-					id3: bt(&storable{ID: id3, IndexedField: value3}),
+					id1: bt(&indexable{ID: id1, IndexedField: value1}),
+					id2: bt(&indexable{ID: id2, IndexedField: value2}),
+					id3: bt(&indexable{ID: id3, IndexedField: value3}),
 				},
 				indexBucketName: bucket{
 					value1: bucket{
@@ -225,22 +170,21 @@ func Test_store_ListRange(t *testing.T) {
 					},
 				},
 			},
-			from:  nil,
-			to:    &storableIndex{IndexedField: value2},
-			limit: 0,
-			skip:  0,
-			expected: storableSlice{
-				storable{ID: id1, IndexedField: value1},
-				storable{ID: id2, IndexedField: value2},
+			from:     nil,
+			to:       index(value2),
+			argument: &indexableSlice{},
+			expected: &indexableSlice{
+				indexable{ID: id1, IndexedField: value1},
+				indexable{ID: id2, IndexedField: value2},
 			},
 		},
 		{
 			name: "range to skip 1 specified",
 			existing: bucket{
 				bucketName: bucket{
-					id1: bt(&storable{ID: id1, IndexedField: value1}),
-					id2: bt(&storable{ID: id2, IndexedField: value2}),
-					id3: bt(&storable{ID: id3, IndexedField: value3}),
+					id1: bt(&indexable{ID: id1, IndexedField: value1}),
+					id2: bt(&indexable{ID: id2, IndexedField: value2}),
+					id3: bt(&indexable{ID: id3, IndexedField: value3}),
 				},
 				indexBucketName: bucket{
 					value1: bucket{
@@ -254,21 +198,20 @@ func Test_store_ListRange(t *testing.T) {
 					},
 				},
 			},
-			from:  nil,
-			to:    &storableIndex{IndexedField: value2},
-			limit: 0,
-			skip:  1,
-			expected: storableSlice{
-				storable{ID: id2, IndexedField: value2},
-			},
+			from:     nil,
+			to:       index(value2),
+			argument: &Page{&indexableSlice{}, 1, 0},
+			expected: &Page{&indexableSlice{
+				indexable{ID: id2, IndexedField: value2},
+			}, 0, 0},
 		},
 		{
 			name: "range to and limit specified",
 			existing: bucket{
 				bucketName: bucket{
-					id1: bt(&storable{ID: id1, IndexedField: value1}),
-					id2: bt(&storable{ID: id2, IndexedField: value2}),
-					id3: bt(&storable{ID: id3, IndexedField: value3}),
+					id1: bt(&indexable{ID: id1, IndexedField: value1}),
+					id2: bt(&indexable{ID: id2, IndexedField: value2}),
+					id3: bt(&indexable{ID: id3, IndexedField: value3}),
 				},
 				indexBucketName: bucket{
 					value1: bucket{
@@ -282,41 +225,12 @@ func Test_store_ListRange(t *testing.T) {
 					},
 				},
 			},
-			from:  nil,
-			to:    &storableIndex{IndexedField: value2},
-			limit: 1,
-			skip:  0,
-			expected: storableSlice{
-				storable{ID: id1, IndexedField: value1},
-			},
-		},
-		{
-			name: "range from and to specified",
-			existing: bucket{
-				bucketName: bucket{
-					id1: bt(&storable{ID: id1, IndexedField: value1}),
-					id2: bt(&storable{ID: id2, IndexedField: value2}),
-					id3: bt(&storable{ID: id3, IndexedField: value3}),
-				},
-				indexBucketName: bucket{
-					value1: bucket{
-						id1: []byte{},
-					},
-					value2: bucket{
-						id2: []byte{},
-					},
-					value3: bucket{
-						id3: []byte{},
-					},
-				},
-			},
-			from:  &storableIndex{IndexedField: value2},
-			to:    &storableIndex{IndexedField: value2},
-			limit: 0,
-			skip:  0,
-			expected: storableSlice{
-				storable{ID: id2, IndexedField: value2},
-			},
+			from:     nil,
+			to:       index(value2),
+			argument: &Page{&indexableSlice{}, 0, 1},
+			expected: &Page{&indexableSlice{
+				indexable{ID: id1, IndexedField: value1},
+			}, 0, 0},
 		},
 	}
 	for _, tt := range tests {
@@ -324,13 +238,23 @@ func Test_store_ListRange(t *testing.T) {
 			s, teardown := prep(t, tt.existing)
 			defer teardown()
 
-			sl := storableSlice{}
+			err := s.View(func(tx *bolt.Tx) error {
+				r := reader{tx}
+				from := tt.from
+				to := tt.to
 
-			err := s.View(func(r Reader) error {
-				return r.Query(&sl, Range{From: tt.from, To: tt.to, Limit: tt.limit, Skip: tt.skip})
+				if from != nil && to != nil {
+					return r.Scan(tt.argument, []Bound{LowerBound{from}, UpperBound{to}})
+				} else if from != nil {
+					return r.Scan(tt.argument, []Bound{LowerBound{from}})
+				} else if to != nil {
+					return r.Scan(tt.argument, []Bound{UpperBound{to}})
+				}
+				return r.Scan(tt.argument, []Bound{})
+
 			})
 			assert.Nil(t, err)
-			assert.Equal(t, tt.expected, sl)
+			assert.Equal(t, tt.expected, tt.argument)
 		})
 	}
 }
@@ -338,19 +262,18 @@ func Test_store_ListRange(t *testing.T) {
 func Test_store_ListBy(t *testing.T) {
 
 	tests := []struct {
-		name        string
-		existing    bucket
-		index       string
-		limit, skip int
-		expected    storableSlice
+		name     string
+		existing bucket
+		argument Queryable
+		expected Queryable
 	}{
 		{
 			name: "list by index",
 			existing: bucket{
 				bucketName: bucket{
-					id1: bt(&storable{ID: id1, IndexedField: value1}),
-					id2: bt(&storable{ID: id2, IndexedField: value2}),
-					id3: bt(&storable{ID: id3, IndexedField: value2}),
+					id1: bt(&indexable{ID: id1, IndexedField: value1}),
+					id2: bt(&indexable{ID: id2, IndexedField: value2}),
+					id3: bt(&indexable{ID: id3, IndexedField: value2}),
 				},
 				indexBucketName: bucket{
 					value1: bucket{
@@ -362,20 +285,19 @@ func Test_store_ListBy(t *testing.T) {
 					},
 				},
 			},
-			limit: 0,
-			skip:  0,
-			expected: storableSlice{
-				storable{ID: id1, IndexedField: value1},
-				storable{ID: id2, IndexedField: value2},
-				storable{ID: id3, IndexedField: value2},
+			argument: &indexableSlice{},
+			expected: &indexableSlice{
+				indexable{ID: id1, IndexedField: value1},
+				indexable{ID: id2, IndexedField: value2},
+				indexable{ID: id3, IndexedField: value2},
 			},
 		}, {
 			name: "list by index skip and limit",
 			existing: bucket{
 				bucketName: bucket{
-					id1: bt(&storable{ID: id1, IndexedField: value1}),
-					id2: bt(&storable{ID: id2, IndexedField: value2}),
-					id3: bt(&storable{ID: id3, IndexedField: value2}),
+					id1: bt(&indexable{ID: id1, IndexedField: value1}),
+					id2: bt(&indexable{ID: id2, IndexedField: value2}),
+					id3: bt(&indexable{ID: id3, IndexedField: value2}),
 				},
 				indexBucketName: bucket{
 					value1: bucket{
@@ -387,19 +309,18 @@ func Test_store_ListBy(t *testing.T) {
 					},
 				},
 			},
-			limit: 1,
-			skip:  1,
-			expected: storableSlice{
-				storable{ID: id2, IndexedField: value2},
+			argument: &Page{Limit: 1, Skip: 1, Queryable: &indexableSlice{}},
+			expected: &Page{
+				&indexableSlice{indexable{ID: id2, IndexedField: value2}}, 0, 0,
 			},
 		},
 		{
 			name: "list by index limit",
 			existing: bucket{
 				bucketName: bucket{
-					id1: bt(&storable{ID: id1, IndexedField: value1}),
-					id2: bt(&storable{ID: id2, IndexedField: value2}),
-					id3: bt(&storable{ID: id3, IndexedField: value3}),
+					id1: bt(&indexable{ID: id1, IndexedField: value1}),
+					id2: bt(&indexable{ID: id2, IndexedField: value2}),
+					id3: bt(&indexable{ID: id3, IndexedField: value3}),
 				},
 				indexBucketName: bucket{
 					value1: bucket{
@@ -410,10 +331,9 @@ func Test_store_ListBy(t *testing.T) {
 					},
 				},
 			},
-			limit: 1,
-			skip:  0,
-			expected: storableSlice{
-				storable{ID: id1, IndexedField: value1},
+			argument: &Page{Limit: 1, Skip: 0, Queryable: &indexableSlice{}},
+			expected: &Page{
+				&indexableSlice{indexable{ID: id1, IndexedField: value1}}, 0, 0,
 			},
 		},
 	}
@@ -422,13 +342,14 @@ func Test_store_ListBy(t *testing.T) {
 			s, teardown := prep(t, tt.existing)
 			defer teardown()
 
-			sl := storableSlice{}
-
-			err := s.View(func(r Reader) error {
-				return r.Query(&sl, By{Index: &storableIndex{}, Limit: tt.limit, Skip: tt.skip})
+			err := s.View(func(tx *bolt.Tx) error {
+				r := reader{tx}
+				return r.Scan(tt.argument, []Bound{
+					By{index("")},
+				})
 			})
 			assert.Nil(t, err)
-			assert.Equal(t, tt.expected, sl)
+			assert.Equal(t, tt.expected, tt.argument)
 		})
 	}
 }
@@ -440,15 +361,15 @@ func Test_store_ListWhere(t *testing.T) {
 		existing    bucket
 		index       string
 		limit, skip int
-		expected    storableSlice
+		expected    indexableSlice
 	}{
 		{
 			name: "list where index",
 			existing: bucket{
 				bucketName: bucket{
-					id1: bt(&storable{ID: id1, IndexedField: value1}),
-					id2: bt(&storable{ID: id2, IndexedField: value2}),
-					id3: bt(&storable{ID: id3, IndexedField: value3}),
+					id1: bt(&indexable{ID: id1, IndexedField: value1}),
+					id2: bt(&indexable{ID: id2, IndexedField: value2}),
+					id3: bt(&indexable{ID: id3, IndexedField: value3}),
 				},
 				indexBucketName: bucket{
 					value1: bucket{
@@ -462,8 +383,8 @@ func Test_store_ListWhere(t *testing.T) {
 			limit: 1,
 			skip:  0,
 			index: value2,
-			expected: storableSlice{
-				storable{ID: id2, IndexedField: value2},
+			expected: indexableSlice{
+				indexable{ID: id2, IndexedField: value2},
 			},
 		},
 	}
@@ -472,10 +393,11 @@ func Test_store_ListWhere(t *testing.T) {
 			s, teardown := prep(t, tt.existing)
 			defer teardown()
 
-			sl := storableSlice{}
+			sl := indexableSlice{}
 
-			err := s.View(func(r Reader) error {
-				return r.Query(&sl, Where{Value: &storableIndex{IndexedField: tt.index}, Limit: tt.limit, Skip: tt.skip})
+			err := s.View(func(tx *bolt.Tx) error {
+				r := reader{tx}
+				return r.Scan(&sl, []Bound{Where{index(tt.index)}})
 			})
 			assert.Nil(t, err)
 			assert.Equal(t, tt.expected, sl)
@@ -486,37 +408,39 @@ func Test_store_ListWhere(t *testing.T) {
 func Test_store_List(t *testing.T) {
 
 	tests := []struct {
-		name        string
-		existing    bucket
-		limit, skip int
-		expected    storableSlice
+		name     string
+		existing bucket
+		argument Queryable
+		expected Queryable
 	}{
 		{
-			"List 3 storable",
-			bucket{
+			name: "List 3 indexable",
+			existing: bucket{
 				bucketName: bucket{
-					id1: bt(&storable{ID: id1, IndexedField: value1}),
-					id2: bt(&storable{ID: id2, IndexedField: value2}),
-					id3: bt(&storable{ID: id3, IndexedField: value3}),
+					id1: bt(&indexable{ID: id1, IndexedField: value1}),
+					id2: bt(&indexable{ID: id2, IndexedField: value2}),
+					id3: bt(&indexable{ID: id3, IndexedField: value3}),
 				},
-			}, 0, 0,
-			storableSlice{
-				storable{ID: id1, IndexedField: value1},
-				storable{ID: id2, IndexedField: value2},
-				storable{ID: id3, IndexedField: value3},
+			},
+			argument: &indexableSlice{},
+			expected: &indexableSlice{
+				indexable{ID: id1, IndexedField: value1},
+				indexable{ID: id2, IndexedField: value2},
+				indexable{ID: id3, IndexedField: value3},
 			},
 		},
 		{
-			"Limit 1, skip 1 ",
-			bucket{
+			name: "Limit 1, skip 1 ",
+			existing: bucket{
 				bucketName: bucket{
-					id1: bt(&storable{ID: id1, IndexedField: value1}),
-					id2: bt(&storable{ID: id2, IndexedField: value2}),
-					id3: bt(&storable{ID: id3, IndexedField: value3}),
+					id1: bt(&indexable{ID: id1, IndexedField: value1}),
+					id2: bt(&indexable{ID: id2, IndexedField: value2}),
+					id3: bt(&indexable{ID: id3, IndexedField: value3}),
 				},
-			}, 1, 1,
-			storableSlice{
-				storable{ID: id2, IndexedField: value2},
+			},
+			argument: &Page{&indexableSlice{}, 1, 1},
+			expected: &Page{
+				&indexableSlice{indexable{ID: id2, IndexedField: value2}}, 0, 0,
 			},
 		},
 	}
@@ -525,13 +449,12 @@ func Test_store_List(t *testing.T) {
 			s, teardown := prep(t, tt.existing)
 			defer teardown()
 
-			sl := storableSlice{}
-
-			err := s.View(func(r Reader) error {
-				return r.Query(&sl, Page{Limit: tt.limit, Skip: tt.skip})
+			err := s.View(func(tx *bolt.Tx) error {
+				r := reader{tx}
+				return r.Scan(tt.argument, []Bound{})
 			})
 			assert.Nil(t, err)
-			assert.Equal(t, tt.expected, sl)
+			assert.Equal(t, tt.expected, tt.argument)
 
 		})
 	}

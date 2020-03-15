@@ -23,57 +23,39 @@ const (
 	value3                = "value3"
 )
 
-type (
-	storable struct {
-		ID           string
-		IndexedField string
-	}
+type bucket map[string]interface{}
 
-	indexable struct {
-		ID           string
-		IndexedField string
-	}
-
-	storableIndex storable
-
-	storableSlice          []storable
-	storableWithIndexSlice []indexable
-
-	bucket map[string]interface{}
-)
-
-func (e *storableWithIndexSlice) AppendBinary(data []byte) error {
-	*e = append(*e, indexable{})
-	return (*e)[len(*e)-1].UnmarshalBinary(data)
+type indexable struct {
+	ID           string
+	IndexedField string
 }
-func (e storableWithIndexSlice) BucketKey() []byte { return []byte(bucketName) }
 
-func (e *storableSlice) AppendBinary(data []byte) error {
-	*e = append(*e, storable{})
-	return (*e)[len(*e)-1].UnmarshalBinary(data)
-}
-func (e storableSlice) BucketKey() []byte { return []byte(bucketName) }
-
-func (e *indexable) Key() []byte                              { return []byte(e.ID) }
-func (e *indexable) BucketKey() []byte                        { return []byte(bucketName) }
-func (e *indexable) MarshalBinary() ([]byte, error)           { return json.Marshal(e) }
-func (e *indexable) UnmarshalBinary(jdata []byte) (err error) { return json.Unmarshal(jdata, e) }
-func (e *indexable) MasterIndexBucketKey() []byte             { return []byte(masterIndexBucketName) }
+func (e *indexable) UniqueKey() []byte                       { return []byte(e.ID) }
+func (e *indexable) BucketKey() []byte                       { return []byte(bucketName) }
+func (e *indexable) MarshalBinary() ([]byte, error)          { return json.Marshal(e) }
+func (e *indexable) UnmarshalBinary(data []byte) (err error) { return json.Unmarshal(data, e) }
+func (e *indexable) AppendBinary(data []byte) (bool, error)  { return false, json.Unmarshal(data, e) }
+func (e *indexable) MasterIndexBucketKey() []byte            { return []byte(masterIndexBucketName) }
 func (e *indexable) Indexes() []Index {
 	return []Index{
-		Index((*storableIndex)(e)),
+		index(e.IndexedField),
 	}
 }
 
-func (e *storableIndex) BucketKey() []byte { return []byte(indexBucketName) }
-func (e *storableIndex) Key() []byte       { return []byte(e.IndexedField) }
+type index string
 
-func (e *storable) Key() []byte                              { return []byte(e.ID) }
-func (e *storable) BucketKey() []byte                        { return []byte(bucketName) }
-func (e *storable) MarshalBinary() ([]byte, error)           { return json.Marshal(e) }
-func (e *storable) UnmarshalBinary(jdata []byte) (err error) { return json.Unmarshal(jdata, e) }
+func (e index) BucketKey() []byte { return []byte(indexBucketName) }
+func (e index) Key() []byte       { return []byte(e) }
 
-func prep(t *testing.T, initWith bucket) (s *db, teardown func()) {
+type indexableSlice []indexable
+
+func (e *indexableSlice) AppendBinary(data []byte) (bool, error) {
+	*e = append(*e, indexable{})
+	return true, (*e)[len(*e)-1].UnmarshalBinary(data)
+}
+func (e indexableSlice) BucketKey() []byte { return []byte(bucketName) }
+
+func prep(t *testing.T, initWith bucket) (s *bolt.DB, teardown func()) {
 	_ = os.Remove(dbPath)
 	b, err := bolt.Open(dbPath, 0600, &bolt.Options{})
 	assert.Nil(t, err)
@@ -95,9 +77,8 @@ func prep(t *testing.T, initWith bucket) (s *db, teardown func()) {
 	})
 	assert.Nil(t, err)
 
-	return &db{
-			DB: b,
-		}, func() {
+	return b,
+		func() {
 			err = s.Close()
 			assert.Nil(t, err)
 		}

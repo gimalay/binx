@@ -2,121 +2,117 @@ package binx
 
 import (
 	"bytes"
-	"reflect"
 
-	bolt "github.com/coreos/bbolt"
 	"github.com/pkg/errors"
 )
 
-type (
-	reader struct {
-		*bolt.Tx
-	}
-)
+func (r *reader) Scan(s Queryable, bns []Bound) error {
 
-func (r *reader) List(s QueryableSlice) (err error) {
-	return r.list(s, 0, 0)
-}
-func (r *reader) Query(s QueryableSlice, qr Query) error {
-	err := qr.validate()
-	if err != nil {
-		return err
+	if len(bns) == 0 {
+		return r.list(s)
 	}
 
-	switch q := qr.(type) {
-	case By:
-		return r.listBy(s, q.Index, q.Limit, q.Skip)
-	case Where:
-		return r.listWhere(s, q.Value, q.Limit, q.Skip)
-	case Page:
-		return r.list(s, q.Limit, q.Skip)
-	case Range:
-		if q.From != nil {
-			return r.listRange(s, q.From, q.From, q.To, q.Limit, q.Skip)
+	v := bns
+
+	if len(v) == 1 {
+
+		b := v[0]
+
+		if b.Upper() && b.Lower() {
+			return r.listWhere(s, b)
 		}
 
-		if q.To != nil {
-			return r.listRange(s, q.To, q.From, q.To, q.Limit, q.Skip)
+		if !b.Upper() && !b.Lower() {
+			return r.listBy(s, v[0])
 		}
 
-		return r.list(s, q.Limit, q.Skip)
+		if b.Upper() {
+			return r.listRange(s, nil, b)
+		}
+
+		if b.Lower() {
+			return r.listRange(s, b, nil)
+		}
+
 	}
 
-	return errors.New("unknow query")
+	if len(v) == 2 {
+
+		if v[0].Upper() && v[1].Lower() {
+			return r.listRange(s, v[1], v[0])
+		}
+		if v[1].Upper() && v[0].Lower() {
+			return r.listRange(s, v[0], v[1])
+		}
+	}
+
+	return errors.New("Not implemented")
 }
 
-func (r *reader) list(q QueryableSlice, limit, skip int) (err error) {
+func (r *reader) list(q Queryable) error {
 	bkt := r.Bucket(q.BucketKey())
 	if bkt == nil {
 		return ErrIdxNotFound
 	}
 
 	c := bkt.Cursor()
-	n := 0
-	l := 0
 	for k, v := c.First(); k != nil; k, v = c.Next() {
-		n++
-		if skip > 0 && n <= skip {
-			continue
+		more, err := q.AppendBinary(v)
+		if !more {
+			return nil
 		}
 
-		if err = q.AppendBinary(v); err != nil {
+		if err != nil {
 			return errors.Wrap(err, "failed to unmarshal storable")
 		}
-
-		l++
-		if limit > 0 && l >= limit {
-			break
-		}
 	}
 
-	return err
+	return nil
 }
 
-func (r *reader) listBy(q QueryableSlice, index Bucket, limit, skip int) (err error) {
-	if q == nil {
-		return errors.New(errNilPointer)
-	}
+func (r *reader) listBy(q Queryable, byIdx Bucket) error {
 	bkt := r.Bucket(q.BucketKey())
 	if bkt == nil {
 		return ErrIdxNotFound
 	}
 
-	ix := r.Bucket(index.BucketKey())
+	ix := r.Bucket(byIdx.BucketKey())
 	if ix == nil {
 		return ErrIdxNotFound
 	}
 
 	ic := ix.Cursor()
-	n := 0
-	l := 0
+
+	more := false
+
 	for ik, _ := ic.First(); ik != nil; ik, _ = ic.Next() {
 
 		kb := ix.Bucket(ik)
 		kc := kb.Cursor()
 
 		for k, _ := kc.First(); k != nil; k, _ = kc.Next() {
-			n++
-			if skip > 0 && n <= skip {
-				continue
-			}
-
-			if err = q.AppendBinary(bkt.Get(k)); err != nil {
+			var err error = nil
+			more, err = q.AppendBinary(bkt.Get(k))
+			if err != nil {
 				return err
 			}
-
-			l++
-			if limit > 0 && l >= limit {
+			if !more {
 				return nil
 			}
 		}
 
 	}
 
-	return err
+	return nil
 }
 
-func (r *reader) listRange(q QueryableSlice, index, from, to Index, limit, skip int) error {
+func (r *reader) listRange(q Queryable, from, to Index) error {
+
+	index := from
+
+	if index == nil {
+		index = to
+	}
 
 	if index == nil {
 		return errors.New("cannot build range with nil index")
@@ -124,12 +120,12 @@ func (r *reader) listRange(q QueryableSlice, index, from, to Index, limit, skip 
 
 	if to != nil {
 		if !bytes.Equal(index.BucketKey(), to.BucketKey()) {
-			return errors.New("cannot build range with two different indexes")
+			return errors.New("cannot build range for two different indexes")
 		}
 	}
 	if from != nil {
 		if !bytes.Equal(index.BucketKey(), from.BucketKey()) {
-			return errors.New("cannot build range with two different indexes")
+			return errors.New("cannot build range for two different indexes")
 		}
 	}
 
@@ -145,32 +141,28 @@ func (r *reader) listRange(q QueryableSlice, index, from, to Index, limit, skip 
 	if ix == nil {
 		return ErrIdxNotFound
 	}
+
 	ic := ix.Cursor()
-	n := 0
-	l := 0
 
 	s, _ := ic.First()
 	if from != nil {
 		s, _ = ic.Seek(from.Key())
 	}
 
-	for ik := s; ik != nil && (to == nil || bytes.Compare(ik, to.Key()) <= 0); ik, _ = ic.Next() {
+	for ik := s; ik != nil; ik, _ = ic.Next() {
+		if to != nil && bytes.Compare(ik, to.Key()) > 0 {
+			break
+		}
 
 		kb := ix.Bucket(ik)
 		kc := kb.Cursor()
 
 		for k, _ := kc.First(); k != nil; k, _ = kc.Next() {
-			n++
-			if skip > 0 && n <= skip {
-				continue
-			}
-
-			if err := q.AppendBinary(bkt.Get(k)); err != nil {
+			more, err := q.AppendBinary(bkt.Get(k))
+			if err != nil {
 				return err
 			}
-
-			l++
-			if limit > 0 && l >= limit {
+			if !more {
 				return nil
 			}
 		}
@@ -179,7 +171,7 @@ func (r *reader) listRange(q QueryableSlice, index, from, to Index, limit, skip 
 	return nil
 }
 
-func (r *reader) listWhere(q QueryableSlice, index Index, limit, skip int) (err error) {
+func (r *reader) listWhere(q Queryable, index Index) error {
 	if q == nil {
 		return errors.New(errNilPointer)
 	}
@@ -199,63 +191,22 @@ func (r *reader) listWhere(q QueryableSlice, index Index, limit, skip int) (err 
 	}
 
 	c := ik.Cursor()
-	n := 0
-	l := 0
 	for k, _ := c.First(); k != nil; k, _ = c.Next() {
-		n++
-		if skip > 0 && n <= skip {
-			continue
-		}
 
-		if err = q.AppendBinary(bkt.Get(k)); err != nil {
+		more, err := q.AppendBinary(bkt.Get(k))
+		if err != nil {
 			return err
 		}
-
-		l++
-		if limit > 0 && l >= limit {
+		if !more {
 			return nil
 		}
 	}
 
-	return err
+	return nil
 }
 
-func (r *reader) First(q Queryable) (err error) {
-	if reflect.ValueOf(q).IsNil() {
-		return errors.New(errNilPointer)
-	}
-	bkt := r.Bucket(q.BucketKey())
-	if bkt == nil {
-		panic("cannot get bkt " + string(q.BucketKey()))
-	}
-	c := bkt.Cursor()
-	_, val := c.First()
-	if val == nil {
-		return ErrNotFound
-	}
-
-	return q.UnmarshalBinary(val)
-}
-
-func (r *reader) Last(q Queryable) (err error) {
-	if reflect.ValueOf(q).IsNil() {
-		return errors.New(errNilPointer)
-	}
-	bkt := r.Bucket(q.BucketKey())
-	if bkt == nil {
-		panic("cannot get bkt " + string(q.BucketKey()))
-	}
-	c := bkt.Cursor()
-	_, val := c.Last()
-	if val == nil {
-		return ErrNotFound
-	}
-
-	return q.UnmarshalBinary(val)
-}
-
-func (r *reader) Get(q Queryable, key []byte) (err error) {
-	if reflect.ValueOf(q).IsNil() {
+func (r *reader) Get(q Queryable, key []byte) error {
+	if q == nil {
 		return errors.New(errNilPointer)
 	}
 	if len(key) == 0 {
@@ -270,5 +221,7 @@ func (r *reader) Get(q Queryable, key []byte) (err error) {
 		return ErrNotFound
 	}
 
-	return q.UnmarshalBinary(data)
+	_, err := q.AppendBinary(data)
+
+	return err
 }

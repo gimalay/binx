@@ -3,10 +3,11 @@ package binx
 import (
 	"testing"
 
+	bolt "github.com/coreos/bbolt"
 	"github.com/stretchr/testify/assert"
 )
 
-func bt(m Storable) []byte {
+func bt(m Indexable) []byte {
 	b, _ := m.MarshalBinary()
 	return b
 }
@@ -100,9 +101,9 @@ func Test_store_Put_WithIndex(t *testing.T) {
 			db, teardown := prep(t, bucket{bucketName: bucket{}, indexBucketName: bucket{}, masterIndexBucketName: bucket{}})
 			defer teardown()
 
-			err := db.Update(func(r Reader, w Writer) error {
+			err := db.Update(func(tx *bolt.Tx) error {
 				for _, v := range tt.argument {
-					err := w.Put(v)
+					err := (&writer{tx}).Put(v)
 					if err != nil {
 						return err
 					}
@@ -112,7 +113,7 @@ func Test_store_Put_WithIndex(t *testing.T) {
 
 			assert.Nil(t, err)
 			state := bucket{}
-			err = db.DB.View(readBuckets(&state))
+			err = db.View(readBuckets(&state))
 			assert.Nil(t, err)
 
 			assert.Equal(t, tt.expected, state)

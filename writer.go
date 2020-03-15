@@ -5,26 +5,20 @@ import (
 	"github.com/pkg/errors"
 )
 
-type (
-	writer struct {
-		*bolt.Tx
-	}
-)
-
-func (w *writer) Put(s Indexable) error {
+func (w *writer) Put(idx Indexable) error {
 	tx := w.Tx
 
-	bucket := tx.Bucket(s.BucketKey())
+	bucket := tx.Bucket(idx.BucketKey())
 	if bucket == nil {
-		return errors.New("cannot get bucket " + string(s.BucketKey()))
+		return errors.New("cannot get bucket " + string(idx.BucketKey()))
 	}
 
-	err := processIndexable(tx, s)
+	err := processIndexable(tx, idx)
 	if err != nil {
 		return errors.Wrap(err, "process indexes")
 	}
 
-	return errors.Wrap(put(bucket, s), "put")
+	return errors.Wrap(put(bucket, idx), "put")
 }
 
 func processIndexable(tx *bolt.Tx, idx Indexable) error {
@@ -60,7 +54,7 @@ func createIndexes(tx *bolt.Tx, idx Indexable) error {
 			return err
 		}
 
-		err = b.Put(idx.Key(), nil)
+		err = b.Put(idx.UniqueKey(), nil)
 		if err != nil {
 			return err
 		}
@@ -70,7 +64,7 @@ func createIndexes(tx *bolt.Tx, idx Indexable) error {
 }
 
 func createMasterIndex(tx *bolt.Tx, mib *bolt.Bucket, idx Indexable) error {
-	if ib, err := mib.CreateBucketIfNotExists(idx.Key()); err == nil {
+	if ib, err := mib.CreateBucketIfNotExists(idx.UniqueKey()); err == nil {
 		for _, i := range idx.Indexes() {
 			err := ib.Put(i.BucketKey(), i.Key())
 			if err != nil {
@@ -82,7 +76,7 @@ func createMasterIndex(tx *bolt.Tx, mib *bolt.Bucket, idx Indexable) error {
 }
 
 func cleanupIndexes(tx *bolt.Tx, mib *bolt.Bucket, idx Indexable) error {
-	ib := mib.Bucket(idx.Key())
+	ib := mib.Bucket(idx.UniqueKey())
 	if ib == nil {
 		return nil
 	}
@@ -90,7 +84,7 @@ func cleanupIndexes(tx *bolt.Tx, mib *bolt.Bucket, idx Indexable) error {
 	err := ib.ForEach(func(k, v []byte) error {
 		if b := tx.Bucket(k); b != nil {
 			if b2 := b.Bucket(v); b2 != nil {
-				return b2.Delete(idx.Key())
+				return b2.Delete(idx.UniqueKey())
 			}
 		}
 		return nil
@@ -100,17 +94,15 @@ func cleanupIndexes(tx *bolt.Tx, mib *bolt.Bucket, idx Indexable) error {
 		return err
 	}
 
-	return mib.DeleteBucket(idx.Key())
+	return mib.DeleteBucket(idx.UniqueKey())
 }
 
-func put(bucket *bolt.Bucket, index Index) (err error) {
+func put(b *bolt.Bucket, idx Indexable) (err error) {
 	var val []byte
 
-	if storable, ok := index.(Storable); ok {
-		if val, err = storable.MarshalBinary(); err != nil {
-			return errors.Wrap(err, "can't marshal storable")
-		}
+	if val, err = idx.MarshalBinary(); err != nil {
+		return errors.Wrap(err, "can't marshal storable")
 	}
 
-	return bucket.Put(index.Key(), val)
+	return b.Put(idx.UniqueKey(), val)
 }

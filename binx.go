@@ -7,12 +7,6 @@ import (
 )
 
 type (
-	db struct {
-		*bolt.DB
-	}
-)
-
-type (
 	Bucket interface {
 		BucketKey() []byte
 	}
@@ -20,128 +14,96 @@ type (
 		Bucket
 		Key() []byte
 	}
-	Storable interface {
-		Index
-		encoding.BinaryMarshaler
+	UniqueIndex interface {
+		Bucket
+		UniqueKey() []byte
+	}
+	Queryable interface {
+		Bucket
+		AppendBinary(data []byte) (bool, error)
 	}
 	Indexable interface {
-		Storable
+		UniqueIndex
+		encoding.BinaryMarshaler
 		MasterIndexBucketKey() []byte
 		Indexes() []Index
 	}
 
-	Queryable interface {
-		Bucket
-		encoding.BinaryUnmarshaler
-	}
-	QueryableSlice interface {
-		Bucket
-		AppendBinary(data []byte) error
-	}
-
-	DB interface {
-		Close() error
-		Update(func(Reader, Writer) error) error
-		View(func(Reader) error) error
-	}
-
 	Reader interface {
-		Get(q Queryable, key []byte) error
-		List(qs QueryableSlice) error
-		Query(qs QueryableSlice, qr Query) error
-		Last(q Queryable) error
-		First(q Queryable) error
+		Get(Queryable, []byte) error
+		Scan(Queryable, []Bound) error
 	}
 
 	Writer interface {
 		Put(Indexable) error
 	}
 
-	Query interface {
-		validate() error
+	Bound interface {
+		Index
+		Upper() bool
+		Lower() bool
 	}
 )
-
-func (q Page) validate() error  { return nil }
-func (q By) validate() error    { return nil }
-func (q Range) validate() error { return nil }
-func (q Where) validate() error { return nil }
 
 type (
-	Page struct {
-		Skip  int
-		Limit int
+	UpperBound struct{ Index }
+	LowerBound struct{ Index }
+	Where      struct{ Index }
+	By         struct{ Index }
+)
+
+func (b UpperBound) Upper() bool { return true }
+func (b UpperBound) Lower() bool { return false }
+
+func (b LowerBound) Upper() bool { return false }
+func (b LowerBound) Lower() bool { return true }
+
+func (b Where) Upper() bool { return true }
+func (b Where) Lower() bool { return true }
+
+func (b By) Upper() bool { return false }
+func (b By) Lower() bool { return false }
+
+type Page struct {
+	Queryable
+	Skip  int
+	Limit int
+}
+
+func (e *Page) AppendBinary(data []byte) (bool, error) {
+	if e.Limit > 0 {
+		e.Limit--
 	}
-	By struct {
-		Index Index
-		Skip  int
-		Limit int
+	if e.Skip > 0 {
+		e.Skip--
+		return true, nil
 	}
-	Range struct {
-		From  Index
-		To    Index
-		Skip  int
-		Limit int
+	_, err := e.Queryable.AppendBinary(data)
+	return e.Limit > 0, err
+}
+
+type (
+	reader struct {
+		*bolt.Tx
 	}
-	Where struct {
-		Value Index
-		Skip  int
-		Limit int
+	writer struct {
+		*bolt.Tx
 	}
 )
 
-type query struct {
-	from  Index
-	to    Index
-	where Index
-	by    Index
-	skip  int
-	limit int
+type Count struct {
+	Total int
 }
 
-func Open(fileName string, structure []Indexable) (DB, error) {
-	buckets := [][]byte{}
-	for _, b := range structure {
-
-		buckets = append(buckets, b.BucketKey())
-		buckets = append(buckets, b.MasterIndexBucketKey())
-		for _, i := range b.Indexes() {
-			buckets = append(buckets, i.BucketKey())
-		}
-	}
-
-	bdb, err := bolt.Open(fileName, 0600, nil)
-	s := &db{bdb}
-	if err != nil {
-		return nil, err
-	}
-
-	err = s.DB.Update(func(tx *bolt.Tx) (err error) {
-
-		for _, v := range buckets {
-			if _, err = tx.CreateBucketIfNotExists(v); err != nil {
-				return err
-			}
-		}
-
-		return err
-	})
-
-	return DB(s), err
+func (c *Count) AppendBinary([]byte) error {
+	c.Total++
+	return nil
 }
 
-func (s *db) Close() error {
-	return s.DB.Close()
+func NewReader(tx *bolt.Tx) Reader {
+	return &reader{tx}
 }
 
-func (s *db) Update(fn func(r Reader, w Writer) error) error {
-	return s.DB.Update(func(tx *bolt.Tx) error {
-		return fn(&reader{tx}, &writer{tx})
-	})
-}
-
-func (s *db) View(fn func(w Reader) error) error {
-	return s.DB.View(func(tx *bolt.Tx) error {
-		return fn(&reader{tx})
-	})
+func NewWriter(tx *bolt.Tx) Writer {
+	return &writer{tx}
 }
