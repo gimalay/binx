@@ -103,7 +103,7 @@ func Test_store_Put_WithIndex(t *testing.T) {
 
 			err := db.Update(func(tx *bolt.Tx) error {
 				for _, v := range tt.argument {
-					err := (&writer{tx}).Put(v)
+					err := (&Tx{tx}).Put(v)
 					if err != nil {
 						return err
 					}

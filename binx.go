@@ -10,32 +10,27 @@ type (
 	Bucket interface {
 		BucketKey() []byte
 	}
+
 	Index interface {
 		Bucket
 		Key() []byte
 	}
+
 	UniqueIndex interface {
 		Bucket
 		UniqueKey() []byte
 	}
+
 	Queryable interface {
 		Bucket
 		AppendBinary(data []byte) (bool, error)
 	}
+
 	Indexable interface {
 		UniqueIndex
 		encoding.BinaryMarshaler
 		MasterIndexBucketKey() []byte
 		Indexes() []Index
-	}
-
-	Reader interface {
-		Get(Queryable, []byte) error
-		Scan(Queryable, []Bound) error
-	}
-
-	Writer interface {
-		Put(Indexable) error
 	}
 
 	Bound interface {
@@ -45,32 +40,42 @@ type (
 	}
 )
 
+func UpperBound(idx Index) Bound                  { return upperBound{idx} }
+func LowerBound(idx Index) Bound                  { return lowerBound{idx} }
+func Where(idx Index) Bound                       { return where{idx} }
+func By(idx Index) Bound                          { return by{idx} }
+func Page(q Queryable, skip, limit int) Queryable { return &page{q, skip, limit} }
+
+type Tx struct {
+	*bolt.Tx
+}
+
 type (
-	UpperBound struct{ Index }
-	LowerBound struct{ Index }
-	Where      struct{ Index }
-	By         struct{ Index }
+	upperBound struct{ Index }
+	lowerBound struct{ Index }
+	where      struct{ Index }
+	by         struct{ Index }
 )
 
-func (b UpperBound) Upper() bool { return true }
-func (b UpperBound) Lower() bool { return false }
+func (b upperBound) Upper() bool { return true }
+func (b upperBound) Lower() bool { return false }
 
-func (b LowerBound) Upper() bool { return false }
-func (b LowerBound) Lower() bool { return true }
+func (b lowerBound) Upper() bool { return false }
+func (b lowerBound) Lower() bool { return true }
 
-func (b Where) Upper() bool { return true }
-func (b Where) Lower() bool { return true }
+func (b where) Upper() bool { return true }
+func (b where) Lower() bool { return true }
 
-func (b By) Upper() bool { return false }
-func (b By) Lower() bool { return false }
+func (b by) Upper() bool { return false }
+func (b by) Lower() bool { return false }
 
-type Page struct {
+type page struct {
 	Queryable
 	Skip  int
 	Limit int
 }
 
-func (e *Page) AppendBinary(data []byte) (bool, error) {
+func (e *page) AppendBinary(data []byte) (bool, error) {
 	if e.Limit > 0 {
 		e.Limit--
 	}
@@ -82,15 +87,6 @@ func (e *Page) AppendBinary(data []byte) (bool, error) {
 	return e.Limit > 0, err
 }
 
-type (
-	reader struct {
-		*bolt.Tx
-	}
-	writer struct {
-		*bolt.Tx
-	}
-)
-
 type Count struct {
 	Total int
 }
@@ -98,12 +94,4 @@ type Count struct {
 func (c *Count) AppendBinary([]byte) error {
 	c.Total++
 	return nil
-}
-
-func NewReader(tx *bolt.Tx) Reader {
-	return &reader{tx}
-}
-
-func NewWriter(tx *bolt.Tx) Writer {
-	return &writer{tx}
 }

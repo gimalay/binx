@@ -70,7 +70,7 @@ func Test_store_Get(t *testing.T) {
 			defer teardown()
 
 			err := s.View(func(tx *bolt.Tx) error {
-				r := &reader{tx}
+				r := &Tx{tx}
 				return r.Get(tt.argument, tt.keyToGet)
 			})
 
@@ -200,8 +200,8 @@ func Test_store_ListRange(t *testing.T) {
 			},
 			from:     nil,
 			to:       index(value2),
-			argument: &Page{&indexableSlice{}, 1, 0},
-			expected: &Page{&indexableSlice{
+			argument: &page{&indexableSlice{}, 1, 0},
+			expected: &page{&indexableSlice{
 				indexable{ID: id2, IndexedField: value2},
 			}, 0, 0},
 		},
@@ -227,8 +227,8 @@ func Test_store_ListRange(t *testing.T) {
 			},
 			from:     nil,
 			to:       index(value2),
-			argument: &Page{&indexableSlice{}, 0, 1},
-			expected: &Page{&indexableSlice{
+			argument: &page{&indexableSlice{}, 0, 1},
+			expected: &page{&indexableSlice{
 				indexable{ID: id1, IndexedField: value1},
 			}, 0, 0},
 		},
@@ -239,16 +239,16 @@ func Test_store_ListRange(t *testing.T) {
 			defer teardown()
 
 			err := s.View(func(tx *bolt.Tx) error {
-				r := reader{tx}
+				r := &Tx{tx}
 				from := tt.from
 				to := tt.to
 
 				if from != nil && to != nil {
-					return r.Scan(tt.argument, []Bound{LowerBound{from}, UpperBound{to}})
+					return r.Scan(tt.argument, []Bound{lowerBound{from}, upperBound{to}})
 				} else if from != nil {
-					return r.Scan(tt.argument, []Bound{LowerBound{from}})
+					return r.Scan(tt.argument, []Bound{lowerBound{from}})
 				} else if to != nil {
-					return r.Scan(tt.argument, []Bound{UpperBound{to}})
+					return r.Scan(tt.argument, []Bound{upperBound{to}})
 				}
 				return r.Scan(tt.argument, []Bound{})
 
@@ -309,8 +309,8 @@ func Test_store_ListBy(t *testing.T) {
 					},
 				},
 			},
-			argument: &Page{Limit: 1, Skip: 1, Queryable: &indexableSlice{}},
-			expected: &Page{
+			argument: &page{Limit: 1, Skip: 1, Queryable: &indexableSlice{}},
+			expected: &page{
 				&indexableSlice{indexable{ID: id2, IndexedField: value2}}, 0, 0,
 			},
 		},
@@ -331,8 +331,8 @@ func Test_store_ListBy(t *testing.T) {
 					},
 				},
 			},
-			argument: &Page{Limit: 1, Skip: 0, Queryable: &indexableSlice{}},
-			expected: &Page{
+			argument: &page{Limit: 1, Skip: 0, Queryable: &indexableSlice{}},
+			expected: &page{
 				&indexableSlice{indexable{ID: id1, IndexedField: value1}}, 0, 0,
 			},
 		},
@@ -343,9 +343,9 @@ func Test_store_ListBy(t *testing.T) {
 			defer teardown()
 
 			err := s.View(func(tx *bolt.Tx) error {
-				r := reader{tx}
+				r := &Tx{tx}
 				return r.Scan(tt.argument, []Bound{
-					By{index("")},
+					by{index("")},
 				})
 			})
 			assert.Nil(t, err)
@@ -396,8 +396,8 @@ func Test_store_ListWhere(t *testing.T) {
 			sl := indexableSlice{}
 
 			err := s.View(func(tx *bolt.Tx) error {
-				r := reader{tx}
-				return r.Scan(&sl, []Bound{Where{index(tt.index)}})
+				r := &Tx{tx}
+				return r.Scan(&sl, []Bound{where{index(tt.index)}})
 			})
 			assert.Nil(t, err)
 			assert.Equal(t, tt.expected, sl)
@@ -438,8 +438,8 @@ func Test_store_List(t *testing.T) {
 					id3: bt(&indexable{ID: id3, IndexedField: value3}),
 				},
 			},
-			argument: &Page{&indexableSlice{}, 1, 1},
-			expected: &Page{
+			argument: &page{&indexableSlice{}, 1, 1},
+			expected: &page{
 				&indexableSlice{indexable{ID: id2, IndexedField: value2}}, 0, 0,
 			},
 		},
@@ -450,7 +450,7 @@ func Test_store_List(t *testing.T) {
 			defer teardown()
 
 			err := s.View(func(tx *bolt.Tx) error {
-				r := reader{tx}
+				r := &Tx{tx}
 				return r.Scan(tt.argument, []Bound{})
 			})
 			assert.Nil(t, err)

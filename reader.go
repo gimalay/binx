@@ -3,13 +3,37 @@ package binx
 import (
 	"bytes"
 
+	bolt "github.com/coreos/bbolt"
 	"github.com/pkg/errors"
 )
 
-func (r *reader) Scan(s Queryable, bns []Bound) error {
+func (r *Tx) Get(q Queryable, key []byte) error {
+	tx := r.Tx
+	if q == nil {
+		return errors.New(errNilPointer)
+	}
+	if len(key) == 0 {
+		return errors.New(errEmptyKey)
+	}
+	bkt := tx.Bucket(q.BucketKey())
+	if bkt == nil {
+		panic("cannot get bkt " + string(q.BucketKey()))
+	}
+	data := bkt.Get(key)
+	if data == nil {
+		return ErrNotFound
+	}
+
+	_, err := q.AppendBinary(data)
+
+	return err
+}
+
+func (r *Tx) Scan(s Queryable, bns []Bound) error {
+	tx := r.Tx
 
 	if len(bns) == 0 {
-		return r.list(s)
+		return list(tx, s)
 	}
 
 	v := bns
@@ -19,19 +43,19 @@ func (r *reader) Scan(s Queryable, bns []Bound) error {
 		b := v[0]
 
 		if b.Upper() && b.Lower() {
-			return r.listWhere(s, b)
+			return listWhere(tx, s, b)
 		}
 
 		if !b.Upper() && !b.Lower() {
-			return r.listBy(s, v[0])
+			return listBy(tx, s, v[0])
 		}
 
 		if b.Upper() {
-			return r.listRange(s, nil, b)
+			return listRange(tx, s, nil, b)
 		}
 
 		if b.Lower() {
-			return r.listRange(s, b, nil)
+			return listRange(tx, s, b, nil)
 		}
 
 	}
@@ -39,17 +63,17 @@ func (r *reader) Scan(s Queryable, bns []Bound) error {
 	if len(v) == 2 {
 
 		if v[0].Upper() && v[1].Lower() {
-			return r.listRange(s, v[1], v[0])
+			return listRange(tx, s, v[1], v[0])
 		}
 		if v[1].Upper() && v[0].Lower() {
-			return r.listRange(s, v[0], v[1])
+			return listRange(tx, s, v[0], v[1])
 		}
 	}
 
 	return errors.New("Not implemented")
 }
 
-func (r *reader) list(q Queryable) error {
+func list(r *bolt.Tx, q Queryable) error {
 	bkt := r.Bucket(q.BucketKey())
 	if bkt == nil {
 		return ErrIdxNotFound
@@ -70,7 +94,7 @@ func (r *reader) list(q Queryable) error {
 	return nil
 }
 
-func (r *reader) listBy(q Queryable, byIdx Bucket) error {
+func listBy(r *bolt.Tx, q Queryable, byIdx Bucket) error {
 	bkt := r.Bucket(q.BucketKey())
 	if bkt == nil {
 		return ErrIdxNotFound
@@ -106,7 +130,7 @@ func (r *reader) listBy(q Queryable, byIdx Bucket) error {
 	return nil
 }
 
-func (r *reader) listRange(q Queryable, from, to Index) error {
+func listRange(r *bolt.Tx, q Queryable, from, to Index) error {
 
 	index := from
 
@@ -171,7 +195,7 @@ func (r *reader) listRange(q Queryable, from, to Index) error {
 	return nil
 }
 
-func (r *reader) listWhere(q Queryable, index Index) error {
+func listWhere(r *bolt.Tx, q Queryable, index Index) error {
 	if q == nil {
 		return errors.New(errNilPointer)
 	}
@@ -203,25 +227,4 @@ func (r *reader) listWhere(q Queryable, index Index) error {
 	}
 
 	return nil
-}
-
-func (r *reader) Get(q Queryable, key []byte) error {
-	if q == nil {
-		return errors.New(errNilPointer)
-	}
-	if len(key) == 0 {
-		return errors.New(errEmptyKey)
-	}
-	bkt := r.Bucket(q.BucketKey())
-	if bkt == nil {
-		panic("cannot get bkt " + string(q.BucketKey()))
-	}
-	data := bkt.Get(key)
-	if data == nil {
-		return ErrNotFound
-	}
-
-	_, err := q.AppendBinary(data)
-
-	return err
 }

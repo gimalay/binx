@@ -5,7 +5,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func (w *writer) Put(idx Indexable) error {
+func (w *Tx) Put(idx Indexable) error {
 	tx := w.Tx
 
 	bucket := tx.Bucket(idx.BucketKey())
